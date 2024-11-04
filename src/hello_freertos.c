@@ -8,13 +8,10 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
-#include <semphr.h>
+#include "semphr.h"
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
 #include "pico/cyw43_arch.h"
-
-int count = 0;
-bool on = false;
 
 #define LOW_TASK_PRIORITY      ( tskIDLE_PRIORITY + 1UL )
 #define HIGH_TASK_PRIORITY     ( tskIDLE_PRIORITY + 2UL )
@@ -24,22 +21,33 @@ bool on = false;
 SemaphoreHandle_t semaphore;
 
 void high_priority_task(__unused void *params) {
-    vTaskDelay(500);
+    printf("Hello from high priority thread.\n");
+    vTaskDelay(100);
     while(1){
+        printf("Trying to take semaphore in high priority thread.\n");
         bool semaphore_pass = xSemaphoreTake(semaphore, 500);
         if(semaphore_pass){
-            printf("Hello World! We are in high priority!");
+            printf("We have the semaphore in high priority!\n");
+            for(int i = 0; i < 10000000; i += 2) {
+                i -= 1;
+                if (i % 149999 == 0) i++;
+            }
             xSemaphoreGive(semaphore);
         }
     }
 }
 
 void low_priority_task(__unused void *params) {
+    printf("Hello from low priority thread.\n");
     while(1){
+        printf("Trying to take semaphore in low priority thread.\n");
         bool semaphore_pass = xSemaphoreTake(semaphore, 500);
         if(semaphore_pass){
-            printf("Hello World! We are in low priority!");
-            vTaskDelay(1000);
+            printf("We have the semaphore in low priority!\n");
+            for(int i = 0; i < 10000000; i += 2) {
+                i -= 1;
+                if (i % 149999 == 0) i++;
+            }
             xSemaphoreGive(semaphore);
         }
     }
@@ -48,13 +56,19 @@ void low_priority_task(__unused void *params) {
 int main( void )
 {
     stdio_init_all();
+    hard_assert(cyw43_arch_init() == PICO_OK);
+    sleep_ms(10000); // Wait to connect to Pico
+    printf("Main: starting code:\n");
 
     TaskHandle_t hp_task, lp_task;
     semaphore = xSemaphoreCreateBinary();
-    xTaskCreate(low_priority_task, "LOWThread",
+    xSemaphoreGive(semaphore);
+    xTaskCreate(low_priority_task, "Low Priority Thread",
                 LOW_TASK_STACK_SIZE, NULL, LOW_TASK_PRIORITY, &lp_task);
-    xTaskCreate(high_priority_task, "HIGHThread",
+    xTaskCreate(high_priority_task, "High Priority Thread",
                 HIGH_TASK_STACK_SIZE, NULL, HIGH_TASK_PRIORITY, &hp_task);
+    
+    printf("About to start task scheduler.\n");
     vTaskStartScheduler();
     return 0;
 }
