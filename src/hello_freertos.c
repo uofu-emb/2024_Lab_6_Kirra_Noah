@@ -8,7 +8,7 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
-
+#include <semphr.h>
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
 #include "pico/cyw43_arch.h"
@@ -16,39 +16,45 @@
 int count = 0;
 bool on = false;
 
-#define MAIN_TASK_PRIORITY      ( tskIDLE_PRIORITY + 1UL )
-#define BLINK_TASK_PRIORITY     ( tskIDLE_PRIORITY + 2UL )
-#define MAIN_TASK_STACK_SIZE configMINIMAL_STACK_SIZE
-#define BLINK_TASK_STACK_SIZE configMINIMAL_STACK_SIZE
+#define LOW_TASK_PRIORITY      ( tskIDLE_PRIORITY + 1UL )
+#define HIGH_TASK_PRIORITY     ( tskIDLE_PRIORITY + 2UL )
+#define LOW_TASK_STACK_SIZE configMINIMAL_STACK_SIZE
+#define HIGH_TASK_STACK_SIZE configMINIMAL_STACK_SIZE
 
-void blink_task(__unused void *params) {
-    hard_assert(cyw43_arch_init() == PICO_OK);
-    while (true) {
-        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, on);
-        if (count++ % 11) on = !on;
-        vTaskDelay(500);
+SemaphoreHandle_t semaphore;
+
+void high_priority_task(__unused void *params) {
+    vTaskDelay(500);
+    while(1){
+        bool semaphore_pass = xSemaphoreTake(semaphore, 500);
+        if(semaphore_pass){
+            printf("Hello World! We are in high priority!");
+            xSemaphoreGive(semaphore);
+        }
     }
 }
 
-void main_task(__unused void *params) {
-    xTaskCreate(blink_task, "BlinkThread",
-                BLINK_TASK_STACK_SIZE, NULL, BLINK_TASK_PRIORITY, NULL);
-    char c;
-    while(c = getchar()) {
-        if (c <= 'z' && c >= 'a') putchar(c - 32);
-        else if (c >= 'A' && c <= 'Z') putchar(c + 32);
-        else putchar(c);
+void low_priority_task(__unused void *params) {
+    while(1){
+        bool semaphore_pass = xSemaphoreTake(semaphore, 500);
+        if(semaphore_pass){
+            printf("Hello World! We are in low priority!");
+            vTaskDelay(1000);
+            xSemaphoreGive(semaphore);
+        }
     }
 }
 
 int main( void )
 {
     stdio_init_all();
-    const char *rtos_name;
-    rtos_name = "FreeRTOS";
-    TaskHandle_t task;
-    xTaskCreate(main_task, "MainThread",
-                MAIN_TASK_STACK_SIZE, NULL, MAIN_TASK_PRIORITY, &task);
+
+    TaskHandle_t hp_task, lp_task;
+    semaphore = xSemaphoreCreateBinary();
+    xTaskCreate(low_priority_task, "LOWThread",
+                LOW_TASK_STACK_SIZE, NULL, LOW_TASK_PRIORITY, &lp_task);
+    xTaskCreate(high_priority_task, "HIGHThread",
+                HIGH_TASK_STACK_SIZE, NULL, HIGH_TASK_PRIORITY, &hp_task);
     vTaskStartScheduler();
     return 0;
 }
